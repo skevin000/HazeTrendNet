@@ -12,7 +12,8 @@ import torchvision.transforms.functional as F2
 from collections import OrderedDict
 from modules import *
 from train_eval import *
-
+from torchsummary import summary
+from thop import profile
 
 #  Spatial Context Module in SPM for feature extraction at different scales
 class SCM(nn.Module):
@@ -128,7 +129,34 @@ class SpaFre(nn.Module):
         fre = self.spatial_scale(spa) + fre  # 空间域特征增强频率域
         spa = self.fre_scale(fre) + spa  # 频率域特征增强空间域
         return spa, fre
+
+def compute_params_flops(input_size=(3, 256, 256), trans_map_size=(1, 256, 256)):
+    # Ensure CUDA is available if possible
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
+    # Build the EENet model
+    model = build_net().to(device)
+    
+    # Create dummy input tensors
+    input_tensor = torch.randn(1, *input_size).to(device)
+    trans_map = torch.randn(1, *trans_map_size).to(device)
+    
+    # Compute FLOPs using thop
+    flops, params = profile(model, inputs=(input_tensor, trans_map), verbose=False)
+    
+    # Convert params to millions and FLOPs to gigaflops
+    params_m = params / 1e6  # Parameters in millions
+    flops_g = flops / 1e9    # FLOPs in gigaflops (GFLOPs)
+    
+    # Clean up
+    del model, input_tensor, trans_map
+    torch.cuda.empty_cache()
+    
+    return {
+        'Params (M)': params_m,
+        'FLOPs (G)': flops_g
+    }
+
 #  HazeTrendNet architecture integrating FPM, SPM, and DIM 
 class HazeTrendNet(nn.Module):
     def __init__(self, num_res=8):
@@ -206,8 +234,20 @@ class HazeTrendNet(nn.Module):
         self.SCM2 = SCM(base_channel * 2)  # Spatial context at 128x128
 
         # 动态卷积和注意力模块
-        self.dyn_conv = DynamicConv(3, base_channel * 4)
-        self.attn = AttentionModule(base_channel * 4)
+        # self.dyn_conv = DynamicConv(3, base_channel * 4)
+
+        # DynamicConv modules for each decoder stage
+        self.dyn_conv0 = DynamicConv(base_channel * 4, base_channel * 4)
+        self.dyn_conv1 = DynamicConv(base_channel * 2, base_channel * 2)
+        self.dyn_conv2 = DynamicConv(base_channel, base_channel)
+        
+        
+        # 注意力机制
+        # self.attn = AttentionModule(base_channel * 4)
+
+        self.attn0 = AttentionModule()
+        self.attn1 = AttentionModule()
+        self.attn2 = AttentionModule()
 
     def forward(self, x, trans_map):
         # 计算自适应权重
@@ -249,6 +289,9 @@ class HazeTrendNet(nn.Module):
 
         # Decoding starts
         z = self.Decoder[0](z)  # Decodes spatial features at 64x64
+        w_64 = F.interpolate(w, size=z.shape[2:], mode='bilinear', align_corners=False)
+        z = self.dyn_conv0(z, w_64)
+        z = self.attn0(z, trans_map)  # 添加注意力机制
         z_fre = self.FreDecoder[0](z_fre)  # Decodes frequency features at 64x64
         z_ = self.ConvsOut[0](z)  # Produces intermediate output at 64x64
         z, z_fre = self.inter[3](z, z_fre)  # Fuses features
@@ -264,6 +307,9 @@ class HazeTrendNet(nn.Module):
         z_fre = self.FreConvs[0](z_fre)  # Fuses frequency features
 
         z = self.Decoder[1](z)  # Decodes to 128x128
+        w_128 = F.interpolate(w, size=z.shape[2:], mode='bilinear', align_corners=False)
+        z = self.dyn_conv1(z, w_128)
+        z = self.attn1(z, trans_map)  # 添加注意力机制
         z_fre = self.FreDecoder[1](z_fre)  # Decodes frequency features
         z_ = self.ConvsOut[1](z)  # Produces intermediate output at 128x128
         z, z_fre = self.inter[4](z, z_fre)  # Fuses features
@@ -279,18 +325,15 @@ class HazeTrendNet(nn.Module):
         z_fre = self.FreConvs[1](z_fre)  # Fuses frequency features
 
         z = self.Decoder[2](z)  # Final decoding to 256x256
+        w_256 = w  # Assuming w matches 256x256 input resolution
+        z = self.dyn_conv2(z, w_256)
+        z = self.attn2(z, trans_map)  # 添加注意力机制
         z_fre = self.FreDecoder[2](z_fre)  # Final frequency decoding
         z, z_fre = self.inter[5](z, z_fre)  # Final fusion
 
         z = self.feat_extract[5](z)  # Final spatial output layer
         z_fre = self.fre_extract[5](z_fre)  # Final frequency output layer
         outputs.append(z + x + z_fre)  # Combines spatial, input, and frequency for final output
-
-        # 在空间处理中使用动态卷积
-        # print("z shape before dyn_conv:", z.shape)  # 应输出 [batch_size, 3, H, W]
-        z = self.dyn_conv(z, w)
-        # 在双域交互中使用注意力机制
-        z = self.attn(z, trans_map)
 
         return outputs  # Returns list of multi-scale outputs
 
@@ -317,11 +360,15 @@ def main(args):
         Train(model, args)
     elif args.mode == 'test':
         Eval(model, args)
+    elif args.mode == 'compute_params_flops':
+        result = compute_params_flops(input_size=(3, 256, 256), trans_map_size=(1, 256, 256))
+        print(f"Parameters: {result['Params (M)']:.2f} M")
+        print(f"FLOPs: {result['FLOPs (G)']:.2f} G")
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--model_name', default='HazeTrendNet', type=str)
-    parser.add_argument('--mode', default='test', choices=['train', 'test'], type=str)
+    parser.add_argument('--mode', default='test', choices=['train', 'test', 'compute_params_flops'], type=str)
     parser.add_argument('--data_dir', type=str, default='/SOTS/indoor')
     parser.add_argument('--batch_size', type=int, default=8)
     parser.add_argument('--learning_rate', type=float, default=2e-4)
