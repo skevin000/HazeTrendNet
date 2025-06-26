@@ -36,7 +36,6 @@ class BasicConv(nn.Module):
         return self.main(x)
 
 
-
 #  Encoder block in the spatial branch (part of the encoder-decoder architecture)
 class EBlock1(nn.Module):
     def __init__(self, out_channel, num_res=8):
@@ -68,19 +67,6 @@ def Conv2D(in_channels, out_channels, kernel_size, padding, stride=1, has_relu=F
         modules['relu'] = nn.ReLU()
     return nn.Sequential(modules)
 
-
-# --- 动态卷积核选择 ---
-# class DynamicConv(nn.Module):
-#     def __init__(self, in_channels, out_channels):
-#         super(DynamicConv, self).__init__()
-#         self.conv3x3 = nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1)
-#         self.conv5x5 = nn.Conv2d(in_channels, out_channels, kernel_size=5, padding=2)
-    
-#     def forward(self, x, w):
-#         out3 = self.conv3x3(x)
-#         out5 = self.conv5x5(x)
-#         return w * out5 + (1 - w) * out3
-
 # --- 动态卷积核选择 ---1
 class DynamicConv(nn.Module):  
     def __init__(self, in_channels, out_channels, kernel_size_list=[3, 5]):
@@ -95,18 +81,17 @@ class DynamicConv(nn.Module):
         weighted_outputs = [out * w for out in outputs]
         return sum(weighted_outputs)
 
+# 修改后的 AttentionModule 类
 class AttentionModule(nn.Module):
-    def __init__(self, in_channels):
+    def __init__(self):
         super(AttentionModule, self).__init__()
         self.conv = Conv2D(1, 1, kernel_size=1, padding=0)
         self.sigmoid = nn.Sigmoid()
-    
+
     def forward(self, x, trans_map):
-        # Mask(x) = Sigmoid(1 - t_DCP(x))对齐方法：使用 F.interpolate 将 trans_map 调整到与 x 相同的空间尺寸。
-        trans_map = F.interpolate(trans_map, size=x.shape[2:], mode='bilinear', align_corners=False)    
+        trans_map = F.interpolate(trans_map, size=x.shape[2:], mode='bilinear', align_corners=False)
         mask = self.sigmoid(self.conv(1 - trans_map))
-        return x * mask
-    
+        return x * mask    
 
 # --- 透射率估计 ---1
 def dark_channel_prior(img, patch_size=15):
@@ -296,3 +281,4 @@ class Fine2Coarse(nn.Module):
         resl = self.relu(resl)
         resl = self.conv_sum(resl)
         return resl
+        
