@@ -20,7 +20,7 @@ For dehazing.
 Computational complexity: 50.47 GFLOPs
 total parameters: 5.45M
 
-### Train on RESIDE-Indoor
+### Train on RESIDE-Indoor/Dense-Haze
 
 ~~~
 cd ITS
@@ -28,7 +28,7 @@ python main.py --mode train --data_dir your_path/reside-indoor
 ~~~
 
 
-### Train on RESIDE-Outdoor/Dense-Haze/NH-HAZE
+### Train on RESIDE-Outdoor/NH-HAZE
 ~~~
 cd OTS
 python main.py --mode train --data_dir your_path/reside-outdoor
@@ -38,12 +38,12 @@ python main.py --mode train --data_dir your_path/reside-outdoor
 ### Evaluation
 The pre-trained models are located in the files.
 
-#### Testing on SOTS-Indoor
+#### Testing on SOTS-Indoor/Dense-Haze
 ~~~
 cd ITS
 python main.py --data_dir your_path/reside-indoor --test_model path_to_its_model
 ~~~
-#### Testing on SOTS-Outdoor/Dense-Haze/NH-HAZE
+#### Testing on SOTS-Outdoor/NH-HAZE
 ~~~
 cd OTS
 python main.py --data_dir your_path/reside-outdoor --test_model path_to_ots_model
