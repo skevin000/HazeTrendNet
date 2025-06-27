@@ -28,7 +28,7 @@ python main.py --mode train --data_dir your_path/reside-indoor
 ~~~
 
 
-### Train on RESIDE-Outdoor
+### Train on RESIDE-Outdoor/Dense-Haze/NH-HAZE
 ~~~
 cd OTS
 python main.py --mode train --data_dir your_path/reside-outdoor
@@ -43,7 +43,7 @@ The pre-trained models are located in the files.
 cd ITS
 python main.py --data_dir your_path/reside-indoor --test_model path_to_its_model
 ~~~
-#### Testing on SOTS-Outdoor
+#### Testing on SOTS-Outdoor/Dense-Haze/NH-HAZE
 ~~~
 cd OTS
 python main.py --data_dir your_path/reside-outdoor --test_model path_to_ots_model
